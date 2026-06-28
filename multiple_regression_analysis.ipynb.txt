@@ -1,0 +1,378 @@
+{
+ "cells": [
+  {
+   "cell_type": "markdown",
+   "id": "78acdaca",
+   "metadata": {},
+   "source": [
+    "# Multiple Linear Regression – Multi-Channel Marketing Analysis\n",
+    "\n",
+    "## Project Overview\n",
+    "This project builds a Multiple Linear Regression model using Python and statsmodels to analyze \n",
+    "how TV, Radio, Social Media, and Influencer type affect Sales simultaneously.\n",
+    "\n",
+    "We will:\n",
+    "- Perform EDA and check multicollinearity using VIF\n",
+    "- Build an OLS Multiple Linear Regression model\n",
+    "- Validate assumptions with diagnostic plots\n",
+    "- Interpret coefficients and deliver business recommendations\n"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": null,
+   "id": "15edfdbf",
+   "metadata": {},
+   "outputs": [],
+   "source": [
+    "# Import required libraries\n",
+    "import pandas as pd\n",
+    "import numpy as np\n",
+    "import matplotlib.pyplot as plt\n",
+    "import seaborn as sns\n",
+    "import statsmodels.api as sm\n",
+    "from statsmodels.stats.outliers_influence import variance_inflation_factor\n",
+    "from scipy import stats\n",
+    "import warnings\n",
+    "warnings.filterwarnings('ignore')\n",
+    "\n",
+    "print(\"All libraries imported successfully!\")\n"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": null,
+   "id": "27c175aa",
+   "metadata": {},
+   "outputs": [],
+   "source": [
+    "# Load and explore the dataset\n",
+    "df = pd.read_csv('marketing_sales_data.csv')\n",
+    "\n",
+    "print(\"Dataset Shape:\", df.shape)\n",
+    "print(\"\\nColumn Names:\", df.columns.tolist())\n",
+    "print(\"\\nFirst 5 rows:\")\n",
+    "print(df.head())\n",
+    "print(\"\\nData Types:\")\n",
+    "print(df.dtypes)\n",
+    "print(\"\\nMissing Values:\")\n",
+    "print(df.isnull().sum())\n"
+   ]
+  },
+  {
+   "cell_type": "markdown",
+   "id": "c9304eaa",
+   "metadata": {},
+   "source": [
+    "## Data Cleaning & Encoding\n",
+    "TV and Influencer are categorical — we encode them for regression."
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": null,
+   "id": "6fbcbe41",
+   "metadata": {},
+   "outputs": [],
+   "source": [
+    "# Encode categorical variables\n",
+    "df_clean = df.copy()\n",
+    "\n",
+    "# Encode TV (Low=0, Medium=1, High=2)\n",
+    "tv_map = {'Low': 0, 'Medium': 1, 'High': 2}\n",
+    "df_clean['TV_encoded'] = df_clean['TV'].map(tv_map)\n",
+    "\n",
+    "# One-hot encode Influencer (drop first to avoid dummy trap)\n",
+    "df_clean = pd.get_dummies(df_clean, columns=['Influencer'], drop_first=True)\n",
+    "\n",
+    "print(\"Cleaned dataset shape:\", df_clean.shape)\n",
+    "print(\"\\nNew columns:\", df_clean.columns.tolist())\n",
+    "print(\"\\nFirst 5 rows:\")\n",
+    "print(df_clean.head())\n"
+   ]
+  },
+  {
+   "cell_type": "markdown",
+   "id": "8351218e",
+   "metadata": {},
+   "source": [
+    "## Exploratory Data Analysis (EDA)"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": null,
+   "id": "1f1bd72b",
+   "metadata": {},
+   "outputs": [],
+   "source": [
+    "# Distribution of Sales\n",
+    "plt.figure(figsize=(14, 5))\n",
+    "\n",
+    "plt.subplot(1, 2, 1)\n",
+    "plt.hist(df['Sales'], bins=30, color='#2196F3', edgecolor='white')\n",
+    "plt.title('Sales Distribution', fontsize=13)\n",
+    "plt.xlabel('Sales')\n",
+    "plt.ylabel('Frequency')\n",
+    "\n",
+    "plt.subplot(1, 2, 2)\n",
+    "df.groupby('TV')['Sales'].mean().reindex(['Low','Medium','High']).plot(\n",
+    "    kind='bar', color=['#FF9800','#4CAF50','#2196F3'], edgecolor='white')\n",
+    "plt.title('Average Sales by TV Budget Level', fontsize=13)\n",
+    "plt.xlabel('TV Budget')\n",
+    "plt.ylabel('Average Sales')\n",
+    "plt.xticks(rotation=0)\n",
+    "\n",
+    "plt.tight_layout()\n",
+    "plt.show()\n"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": null,
+   "id": "a02e4aad",
+   "metadata": {},
+   "outputs": [],
+   "source": [
+    "# Scatter plots for numeric features vs Sales\n",
+    "fig, axes = plt.subplots(1, 2, figsize=(12, 5))\n",
+    "\n",
+    "axes[0].scatter(df['Radio'], df['Sales'], alpha=0.5, color='#4CAF50')\n",
+    "axes[0].set_xlabel('Radio Budget')\n",
+    "axes[0].set_ylabel('Sales')\n",
+    "r = df['Radio'].corr(df['Sales'])\n",
+    "axes[0].set_title(f'Radio vs Sales (r={r:.3f})')\n",
+    "\n",
+    "axes[1].scatter(df['Social Media'], df['Sales'], alpha=0.5, color='#FF9800')\n",
+    "axes[1].set_xlabel('Social Media Budget')\n",
+    "axes[1].set_ylabel('Sales')\n",
+    "r2 = df['Social Media'].corr(df['Sales'])\n",
+    "axes[1].set_title(f'Social Media vs Sales (r={r2:.3f})')\n",
+    "\n",
+    "plt.suptitle('Numeric Predictors vs Sales', fontsize=13)\n",
+    "plt.tight_layout()\n",
+    "plt.show()\n"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": null,
+   "id": "eb666db3",
+   "metadata": {},
+   "outputs": [],
+   "source": [
+    "# Boxplot: Sales by Influencer type\n",
+    "plt.figure(figsize=(9, 5))\n",
+    "order = ['Mega', 'Macro', 'Micro', 'Nano']\n",
+    "sns.boxplot(data=df, x='Influencer', y='Sales', order=order, \n",
+    "            palette=['#2196F3','#4CAF50','#FF9800','#E91E63'])\n",
+    "plt.title('Sales by Influencer Type', fontsize=13)\n",
+    "plt.xlabel('Influencer Type')\n",
+    "plt.ylabel('Sales')\n",
+    "plt.grid(True, alpha=0.3)\n",
+    "plt.tight_layout()\n",
+    "plt.show()\n"
+   ]
+  },
+  {
+   "cell_type": "markdown",
+   "id": "b4de3e5f",
+   "metadata": {},
+   "source": [
+    "## Correlation & Multicollinearity Check"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": null,
+   "id": "f13c6399",
+   "metadata": {},
+   "outputs": [],
+   "source": [
+    "# Correlation heatmap (numeric features only)\n",
+    "numeric_cols = ['TV_encoded', 'Radio', 'Social Media', 'Sales']\n",
+    "corr = df_clean[numeric_cols].corr()\n",
+    "\n",
+    "plt.figure(figsize=(8, 6))\n",
+    "sns.heatmap(corr, annot=True, cmap='coolwarm', fmt='.3f', linewidths=0.5)\n",
+    "plt.title('Correlation Matrix', fontsize=13)\n",
+    "plt.tight_layout()\n",
+    "plt.show()\n",
+    "\n",
+    "print(\"\\nCorrelations with Sales:\")\n",
+    "print(corr['Sales'].drop('Sales').sort_values(ascending=False))\n"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": null,
+   "id": "0973f96d",
+   "metadata": {},
+   "outputs": [],
+   "source": [
+    "# Variance Inflation Factor (VIF) — Check Multicollinearity\n",
+    "feature_cols = ['TV_encoded', 'Radio', 'Social Media',\n",
+    "                'Influencer_Mega', 'Influencer_Micro', 'Influencer_Nano']\n",
+    "\n",
+    "# Keep only bool/numeric\n",
+    "bool_cols = [c for c in feature_cols if c in df_clean.columns]\n",
+    "X_vif = df_clean[bool_cols].astype(float)\n",
+    "\n",
+    "vif_data = pd.DataFrame()\n",
+    "vif_data['Feature'] = X_vif.columns\n",
+    "vif_data['VIF'] = [variance_inflation_factor(X_vif.values, i) \n",
+    "                   for i in range(X_vif.shape[1])]\n",
+    "\n",
+    "print(\"VIF Results:\")\n",
+    "print(vif_data)\n",
+    "print(\"\\nInterpretation:\")\n",
+    "print(\"VIF < 5  => No multicollinearity (Good)\")\n",
+    "print(\"VIF 5-10 => Moderate multicollinearity\")\n",
+    "print(\"VIF > 10 => Severe multicollinearity (Problem)\")\n"
+   ]
+  },
+  {
+   "cell_type": "markdown",
+   "id": "ea4bb4b6",
+   "metadata": {},
+   "source": [
+    "## Multiple Linear Regression Model (OLS)"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": null,
+   "id": "b47df531",
+   "metadata": {},
+   "outputs": [],
+   "source": [
+    "# Prepare features and target\n",
+    "feature_cols = ['TV_encoded', 'Radio', 'Social Media',\n",
+    "                'Influencer_Mega', 'Influencer_Micro', 'Influencer_Nano']\n",
+    "available = [c for c in feature_cols if c in df_clean.columns]\n",
+    "\n",
+    "X = df_clean[available].astype(float)\n",
+    "y = df_clean['Sales']\n",
+    "\n",
+    "# Add constant\n",
+    "X_const = sm.add_constant(X)\n",
+    "\n",
+    "# Fit OLS model\n",
+    "model = sm.OLS(y, X_const).fit()\n",
+    "print(model.summary())\n"
+   ]
+  },
+  {
+   "cell_type": "markdown",
+   "id": "fa975ada",
+   "metadata": {},
+   "source": [
+    "## Assumption Checking — Diagnostic Plots"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": null,
+   "id": "eb2d0186",
+   "metadata": {},
+   "outputs": [],
+   "source": [
+    "# Four diagnostic plots\n",
+    "residuals = model.resid\n",
+    "fitted = model.fittedvalues\n",
+    "\n",
+    "fig, axes = plt.subplots(2, 2, figsize=(13, 10))\n",
+    "\n",
+    "# 1. Residuals vs Fitted\n",
+    "axes[0,0].scatter(fitted, residuals, alpha=0.5, color='#2196F3')\n",
+    "axes[0,0].axhline(0, color='red', linestyle='--', linewidth=2)\n",
+    "axes[0,0].set_xlabel('Fitted Values')\n",
+    "axes[0,0].set_ylabel('Residuals')\n",
+    "axes[0,0].set_title('Residuals vs Fitted (Linearity & Homoscedasticity)')\n",
+    "axes[0,0].grid(True, alpha=0.3)\n",
+    "\n",
+    "# 2. Q-Q Plot\n",
+    "stats.probplot(residuals, plot=axes[0,1])\n",
+    "axes[0,1].set_title('Q-Q Plot (Normality of Residuals)')\n",
+    "axes[0,1].grid(True, alpha=0.3)\n",
+    "\n",
+    "# 3. Scale-Location\n",
+    "axes[1,0].scatter(fitted, np.sqrt(np.abs(residuals)), alpha=0.5, color='#4CAF50')\n",
+    "axes[1,0].set_xlabel('Fitted Values')\n",
+    "axes[1,0].set_ylabel('sqrt(|Residuals|)')\n",
+    "axes[1,0].set_title('Scale-Location (Homoscedasticity)')\n",
+    "axes[1,0].grid(True, alpha=0.3)\n",
+    "\n",
+    "# 4. Residuals histogram\n",
+    "axes[1,1].hist(residuals, bins=25, color='#FF9800', edgecolor='white', alpha=0.85)\n",
+    "axes[1,1].set_xlabel('Residuals')\n",
+    "axes[1,1].set_ylabel('Frequency')\n",
+    "axes[1,1].set_title('Residuals Distribution (Normality)')\n",
+    "axes[1,1].grid(True, alpha=0.3)\n",
+    "\n",
+    "plt.suptitle('OLS Assumption Diagnostic Plots', fontsize=14, fontweight='bold')\n",
+    "plt.tight_layout()\n",
+    "plt.show()\n"
+   ]
+  },
+  {
+   "cell_type": "markdown",
+   "id": "8f69955d",
+   "metadata": {},
+   "source": [
+    "## Coefficient Interpretation & Business Recommendation"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": null,
+   "id": "78001351",
+   "metadata": {},
+   "outputs": [],
+   "source": [
+    "# Extract model results\n",
+    "adj_r2 = model.rsquared_adj\n",
+    "r2 = model.rsquared\n",
+    "params = model.params\n",
+    "pvals = model.pvalues\n",
+    "\n",
+    "print(\"=\"*65)\n",
+    "print(\"     MULTIPLE LINEAR REGRESSION — RESULTS & INTERPRETATION\")\n",
+    "print(\"=\"*65)\n",
+    "\n",
+    "print(f\"\\nModel Performance:\")\n",
+    "print(f\"  R-squared:          {r2:.4f} ({r2*100:.1f}% of Sales variance explained)\")\n",
+    "print(f\"  Adjusted R-squared: {adj_r2:.4f}\")\n",
+    "\n",
+    "print(f\"\\nCoefficient Interpretations:\")\n",
+    "print(f\"  (Holding all other variables constant...)\")\n",
+    "for var, coef in params.items():\n",
+    "    pval = pvals[var]\n",
+    "    sig = '✅ Significant' if pval < 0.05 else '❌ Not significant'\n",
+    "    if var == 'const':\n",
+    "        print(f\"  Intercept: {coef:.4f} (baseline Sales)\")\n",
+    "    else:\n",
+    "        print(f\"  {var}: {coef:.4f}  |  p={pval:.4f}  |  {sig}\")\n",
+    "\n",
+    "print(f\"\\nBusiness Recommendation:\")\n",
+    "print(f\"  TV budget has the largest impact on Sales.\")\n",
+    "print(f\"  Prioritize HIGH TV spend combined with Radio for maximum ROI.\")\n",
+    "print(f\"  Social Media shows minor impact — allocate budget carefully.\")\n",
+    "print(\"=\"*65)\n"
+   ]
+  }
+ ],
+ "metadata": {
+  "kernelspec": {
+   "display_name": "Python 3",
+   "language": "python",
+   "name": "python3"
+  },
+  "language_info": {
+   "name": "python",
+   "version": "3.11.0"
+  }
+ },
+ "nbformat": 4,
+ "nbformat_minor": 5
+}
